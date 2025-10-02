@@ -231,6 +231,7 @@ dependencies = [
  "actix-web",
  "dotenv",
  "rand 0.8.5",
+ "serde",
  "tokio",
 ]
 

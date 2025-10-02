@@ -15,16 +15,24 @@
 //! The server listens on port `6769` by default.
 
 mod env;
+mod command;
 
-use actix_web::error::ErrorUnauthorized;
-use actix_web::{App, HttpRequest, HttpServer, Responder, get, post};
+use actix_web::error::{ErrorBadRequest, ErrorUnauthorized};
+use actix_web::{get, post, web, App, HttpRequest, HttpServer, Responder};
 use env::{get_env, insert_custom_env};
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 use std::process::exit;
+use command::execute as command_execute;
+use serde::Deserialize;
 
 /// Default TCP port used by the AstraCore receiver.
 const DEFAULT_APP_PORT: u16 = 6769;
+
+#[derive(Deserialize)]
+struct ExecCommand {
+    syntax: String,
+}
 
 /// Healthcheck endpoint.
 ///
@@ -57,20 +65,25 @@ async fn hello() -> impl Responder {
 ///   - The token cannot be parsed.
 ///   - The token does not match the expected value.
 #[post("/execute")]
-async fn execute(req: HttpRequest) -> Result<impl Responder, actix_web::Error> {
+async fn execute(req: HttpRequest, command: web::Json<ExecCommand>) -> Result<impl Responder, actix_web::Error> {
     let token: String = get_env(&"ASTRA_TOKEN".to_string(), None);
     if let Some(astra_token) = req.headers().get("x-astra-token") {
         if let Ok(token_str) = astra_token.to_str() {
             if token == token_str {
-                return Ok(format!("Executed. Token: {}", token));
+                if command.syntax.trim().is_empty() {
+                    return Err(ErrorBadRequest("Request body is incorrect."));
+                } else {
+                    let output: String = command_execute(&command.syntax);
+                    return Ok(format!("{}", output));
+                }
             } else {
-                return Err(ErrorUnauthorized("Unauthorized"));
+                return Err(ErrorUnauthorized("Unauthorized."));
             }
         } else {
-            return Err(ErrorUnauthorized("Unauthorized"));
+            return Err(ErrorUnauthorized("Unauthorized."));
         }
     } else {
-        return Err(ErrorUnauthorized("Unauthorized"));
+        return Err(ErrorUnauthorized("Unauthorized."));
     }
 }
 
@@ -93,7 +106,9 @@ async fn main() -> std::io::Result<()> {
 
         println!(".env file not found. Initiating install process...");
         insert_custom_env("ASTRA_TOKEN", &token)?;
-
+        println!("!IMPORTANT! Insert the folowing token in your AstraCore Panel:\n");
+        println!("{}\n", &token);
+        println!("This token will also be available in .env");
         println!(
             "The installation process finished. Restart the daemon to apply new settings. Thank you for using AstraCore!"
         );
